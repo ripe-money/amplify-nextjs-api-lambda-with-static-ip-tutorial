@@ -121,4 +121,50 @@ With custom resources, we bypass the convenience functions provided by Amplify a
 
 Information about Amplify's backend is normally summarized in the `amplify_outputs.json` file. The Next.js app will pick up information here for how to interact with the backend. Since Amplify doesn't know the specifics of our custom resource, we will manually append the information using `backend.addOutput()`.
 
-Once you've run `npx ampx sandbox` to deploy this new backend, open `amplify_outputs.json` to find the function name of the deployed Lambda. Look it up in your AWS Lambda dashboard. Navigate to the dashboard for that Lambda and do a test run to see that it can retrieve its own IP address. The result should be an IP address owned by AWS.
+Once you've run `npx ampx sandbox` to deploy this new backend, open `amplify_outputs.json` to find the function name of the deployed Lambda. Look it up in your AWS [Lambda dashboard](console.aws.amazon.com/lambda/home). Navigate to the dashboard for that Lambda and do a test run to see that it can retrieve its own IP address. The result should be an IP address owned by AWS.
+
+## 4. Set the Lambda in its own VPC
+Next we create a generic VPC with mostly default settings for the Lambda. Update `backend.ts`:
+```js
+import { SecurityGroup, SubnetType, Vpc } from 'aws-cdk-lib/aws-ec2'
+
+...
+
+const vpc = new Vpc(vpcStack, 'LambdaVpc', {
+  subnetConfiguration: [
+    {
+      name: 'Isolated',
+      subnetType: SubnetType.PRIVATE_ISOLATED,
+    },
+    {
+      name: 'Private',
+      subnetType: SubnetType.PRIVATE_WITH_EGRESS,
+    },
+    {
+      name: 'Public',
+      subnetType: SubnetType.PUBLIC,
+    },
+  ],
+})
+
+const lambdaSecurityGroup = new SecurityGroup(
+  vpcStack,
+  'Lambda Security Group',
+  { vpc: vpc }
+)
+
+const lambda = new NodejsFunction(vpcStack, 'myLambda', {
+  ...
+  vpc: vpc,
+  vpcSubnets: { subnetType: SubnetType.PRIVATE_WITH_EGRESS },
+  securityGroups: [lambdaSecurityGroup],
+})
+
+...
+```
+
+Go back to the Lambda dashboard and test the Lambda again, you'll see the Lambda's IP address has changed. Now go to the AWS VPC dashboard and select the ["Elastic IPs"](https://console.aws.amazon.com/vpcconsole/home?#Addresses:) tab. You'll see two EIP addresses there, one of which is the IP address you saw when running the Lambda.
+
+So here's what happened underneath. When we instantiated a VPC with `Vpc()`, we specified three subnet configurations (public, private, isolated) and left the number of availability zones (AZ) unspecified, which defaults to 2. That means we have a total of six subnets. E.g., there are two public subnets, one in each AZ. Similarly there are also two private subnets and two isolated subnets.
+
+The generated VPC also, by default, includes a NAT gateway with one Elastic IP (EIP) address automatically provisioned for each public subnet. Thus you see two EIP addresses on the dashboard. Resources within a VPC interacts with the internet through the NAT gateway, which is why you see one of those two EIPs in the Lambda execution result. We shouldn't care which availability zone a Lambda is running in, since by design the Lambda can run in either AZ to... improve availability.

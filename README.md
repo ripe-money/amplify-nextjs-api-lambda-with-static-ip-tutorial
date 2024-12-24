@@ -54,3 +54,71 @@ export default function Home() {
 ```
 
 If you run this locally, you'll notice the IP address shown is the IP address of your location. That is, the server action is running on your local computer. When deployed in production, this server action will be running on an edge server somewhere, ideally close to the user. This is normally a good thing, but we can't call the payment API from the server action since it doesn't have a static IP address to be whitelisted. For that we'll need a Lambda running in a specially configured VPC.
+
+## 3. Create a Lambda using Amplify
+Amplify has [built-in support](https://docs.amplify.aws/react/build-a-backend/functions/set-up-function/) for creating Lambdas with its `defineFunction` function. Unfortunately, as of this writing, `defineFunction` [doesn't support building Lambdas with VPC](https://github.com/aws-amplify/amplify-backend/issues/1112). We therefore will build our Lambda using Amplify's [custom resources](https://docs.amplify.aws/react/build-a-backend/add-aws-services/custom-resources/).
+
+First we define a handler for our Lambda. It's functionally similar to our server action earlier. We add a bit more error checking to help debug mistakes we may make later on. Create `amplify/functions/get-ip/handler.ts`:
+```js
+import type { APIGatewayProxyHandler } from 'aws-lambda'
+
+export const handler: APIGatewayProxyHandler = async (event) => {
+  console.log('event', event)
+
+  let json = 'Fail to fetch IP address'
+
+  try {
+    const response = await fetch('https://api.ipify.org?format=json')
+    if (response.ok) {
+      json = await response.json()
+    }
+    else {
+      json = response.statusText
+    }
+  }
+  catch (error) {
+    if (error instanceof Error) {
+      json = error.message
+    }
+  }
+
+  return {
+    statusCode: 200,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(json),
+  }
+}
+```
+
+Now update `amplify/backend.ts` to create a Lambda with this handler:
+```js
+import path from 'path'
+
+import { defineBackend } from '@aws-amplify/backend'
+
+import { Duration } from 'aws-cdk-lib'
+import { Runtime } from 'aws-cdk-lib/aws-lambda'
+import { NodejsFunction } from 'aws-cdk-lib/aws-lambda-nodejs'
+
+const backend = defineBackend({})
+
+const vpcStack = backend.createStack('vpc')
+
+const lambda = new NodejsFunction(vpcStack, 'myLambda', {
+  entry: path.join(__dirname, 'functions', 'get-ip', 'handler.ts'),
+  runtime: Runtime.NODEJS_20_X,
+  timeout: Duration.seconds(30),
+})
+
+backend.addOutput({
+  custom: {
+    'vpc-lambda-fn-name': lambda.functionName,
+  }
+})
+```
+
+With custom resources, we bypass the convenience functions provided by Amplify and go one level down to work directly using AWS's CDK. In this case we're using CDK's `NodejsFunction` to create our Lambda.
+
+Information about Amplify's backend is normally summarized in the `amplify_outputs.json` file. The Next.js app will pick up information here for how to interact with the backend. Since Amplify doesn't know the specifics of our custom resource, we will manually append the information using `backend.addOutput()`.
+
+Once you've run `npx ampx sandbox` to deploy this new backend, open `amplify_outputs.json` to find the function name of the deployed Lambda. Look it up in your AWS Lambda dashboard. Navigate to the dashboard for that Lambda and do a test run to see that it can retrieve its own IP address. The result should be an IP address owned by AWS.

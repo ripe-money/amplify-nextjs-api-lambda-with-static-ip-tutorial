@@ -168,3 +168,25 @@ Go back to the Lambda dashboard and test the Lambda again, you'll see the Lambda
 So here's what happened underneath. When we instantiated a VPC with `Vpc()`, we specified three subnet configurations (public, private, isolated) and left the number of availability zones (AZ) unspecified, which defaults to 2. That means we have a total of six subnets. E.g., there are two public subnets, one in each AZ. Similarly there are also two private subnets and two isolated subnets.
 
 The generated VPC also, by default, includes a NAT gateway with one Elastic IP (EIP) address automatically provisioned for each public subnet. Thus you see two EIP addresses on the dashboard. Resources within a VPC interacts with the internet through the NAT gateway, which is why you see one of those two EIPs in the Lambda execution result. We shouldn't care which availability zone a Lambda is running in, since by design the Lambda can run in either AZ to... improve availability.
+
+## 5. Allocate persistent EIP addresses
+Instead of using the automatically provisioned EIPs, we want to use our own that are constant and persistent across various deployments (e.g. multiple dev setups and production). First let's *allocate* our EIP from the ["Elastic IPs"](https://console.aws.amazon.com/vpcconsole/home?#Addresses:) dashboard. We'll need two, one for each availability zone. Note their Allocation IDs. (Obviously, also note their assigned IP addresses.)
+
+Create a `.env` file with those allocation IDs, separated by commas, in an environment variable:
+```sh
+EIP_ALLOCATION_IDS=eipalloc-xxxxx,eipalloc-yyyyy
+```
+
+Install [`dotenv`](https://www.npmjs.com/package/dotenv). Update `backend.ts` to pick up those allocation IDs and replace the auto-generated NAT gateway with our own.
+```js
+...
+import 'dotenv/config'
+const eipAllocationIds = process.env.EIP_ALLOCATION_IDS!.split(',')
+
+const vpc = new Vpc(vpcStack, 'LambdaVpc', {
+  natGatewayProvider: NatProvider.gateway({ eipAllocationIds }),
+  ...
+})
+```
+
+Run the Lambda again. You'll see that it's calling from one of our allocated IP addresses! We will provide these allocated IP addresses to the third-party payment API to be whitelisted.

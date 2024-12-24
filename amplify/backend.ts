@@ -3,15 +3,19 @@ import path from 'path'
 import { defineBackend } from '@aws-amplify/backend'
 
 import { Duration } from 'aws-cdk-lib'
-import { SecurityGroup, SubnetType, Vpc } from 'aws-cdk-lib/aws-ec2'
+import { NatProvider, SecurityGroup, SubnetType, Vpc } from 'aws-cdk-lib/aws-ec2'
 import { Runtime } from 'aws-cdk-lib/aws-lambda'
 import { NodejsFunction } from 'aws-cdk-lib/aws-lambda-nodejs'
+
+import 'dotenv/config'
+const eipAllocationIds = process.env.EIP_ALLOCATION_IDS!.split(',')
 
 const backend = defineBackend({})
 
 const vpcStack = backend.createStack('vpc')
 
 const vpc = new Vpc(vpcStack, 'LambdaVpc', {
+  natGatewayProvider: NatProvider.gateway({ eipAllocationIds }),
   subnetConfiguration: [
     {
       name: 'Isolated',

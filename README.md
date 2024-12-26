@@ -190,3 +190,5 @@ const vpc = new Vpc(vpcStack, 'LambdaVpc', {
 ```
 
 Run the Lambda again. You'll see that it's calling from one of our allocated IP addresses! We will provide these allocated IP addresses to the third-party payment API to be whitelisted.
+
+## 5. Call Lambda from Next.js

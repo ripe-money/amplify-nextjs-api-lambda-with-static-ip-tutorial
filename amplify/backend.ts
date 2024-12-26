@@ -17,18 +17,9 @@ const vpcStack = backend.createStack('vpc')
 const vpc = new Vpc(vpcStack, 'LambdaVpc', {
   natGatewayProvider: NatProvider.gateway({ eipAllocationIds }),
   subnetConfiguration: [
-    {
-      name: 'Isolated',
-      subnetType: SubnetType.PRIVATE_ISOLATED,
-    },
-    {
-      name: 'Private',
-      subnetType: SubnetType.PRIVATE_WITH_EGRESS,
-    },
-    {
-      name: 'Public',
-      subnetType: SubnetType.PUBLIC,
-    },
+    { name: 'Isolated', subnetType: SubnetType.PRIVATE_ISOLATED },
+    { name: 'Private', subnetType: SubnetType.PRIVATE_WITH_EGRESS },
+    { name: 'Public', subnetType: SubnetType.PUBLIC },
   ],
 })
 const lambdaSecurityGroup = new SecurityGroup(

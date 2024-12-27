@@ -18,14 +18,13 @@ defineBackend({});
 At this point you should be able to locally start you backend (`npx ampx sandbox`) in one terminal while starting the frontend (`npm run dev`) in another.
 
 ## 2. Create a barebone server action
-In a typical Next.js app, business logic is executed in server actions. E.g., a server action may handle a payment request by updating databases and making third-party calls. For this tutorial, our server action will just make an API call to... retrieve its own IP address. Create a file `app/actions.ts`:
+In a typical Next.js app, business logic is executed in server actions. E.g., a server action may handle a payment request by updating databases and making third-party calls. For this tutorial, our server action will just make an API call to retrieve its own IP address. Create a file `app/actions.ts`:
 ```js
 'use server'
 
 export async function getIP() {
   return fetch('https://api.ipify.org?format=json')
     .then(res => res.json())
-    .then(data => data.ip)
 }
 ```
 
@@ -41,7 +40,7 @@ export default function Home() {
   const [ip, setIP] = useState('')
 
   useEffect(() => {
-    getIP().then(ip => setIP(ip))
+    getIP().then(json => json && setIP(json.ip))
   }, [])
 
   return (

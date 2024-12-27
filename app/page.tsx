@@ -8,7 +8,7 @@ export default function Home() {
   const [ip, setIP] = useState('')
 
   useEffect(() => {
-    getIP().then(ip => setIP(ip))
+    getIP().then(json => json && setIP(json.ip))
   }, [])
 
   return (

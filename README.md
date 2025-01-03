@@ -1,4 +1,4 @@
-# Tutorial: Amplify Next.js project with API Lambda that has a static IP address
+# Tutorial: Amplify Next.js app with Lambda that makes outbound calls from static IP addresses
 We have a Next.js app deployed using AWS Amplify. The app needs to call a payment API, but that API only accepts calls from a set of whitelisted IP addresses. This presents a challenge since Amplify is designed to use serverless Lambdas for backend code execution, and Lambdas are not guaranteed static IP addresses. This tutorial shows how to add a customized VPC with a NAT gateway to solve that problem.
 
 ## 1. Set up a Amplify Next.js app

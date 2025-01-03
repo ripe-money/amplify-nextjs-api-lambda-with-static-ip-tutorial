@@ -118,7 +118,7 @@ backend.addOutput({
 
 With custom resources, we bypass the convenience functions provided by Amplify and go one level down to work directly using AWS's CDK. In this case we're using CDK's `NodejsFunction` to create our Lambda.
 
-Information about Amplify's backend is normally summarized in the `amplify_outputs.json` file. The Next.js app will pick up information here for how to interact with the backend. Since Amplify doesn't know the specifics of our custom resource, we will manually append the information using `backend.addOutput()`.
+Information about Amplify's backend is normally summarized in the `amplify_outputs.json` file. The Next.js app will pick up information here for how to interact with the backend. Since Amplify doesn't know the specifics of our custom resource, we are manually appending the information using `backend.addOutput()`.
 
 Once you've run `npx ampx sandbox` to deploy this new backend, open `amplify_outputs.json` to find the function name of the deployed Lambda. Look it up in your AWS [Lambda dashboard](console.aws.amazon.com/lambda/home). Navigate to the dashboard for that Lambda and do a test run to see that it can retrieve its own IP address. The result should be an IP address owned by AWS.
 

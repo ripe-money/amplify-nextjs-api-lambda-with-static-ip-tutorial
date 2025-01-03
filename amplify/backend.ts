@@ -3,6 +3,7 @@ import path from 'path'
 import { defineBackend } from '@aws-amplify/backend'
 
 import { Duration } from 'aws-cdk-lib'
+import { LambdaRestApi } from 'aws-cdk-lib/aws-apigateway'
 import { NatProvider, SecurityGroup, SubnetType, Vpc } from 'aws-cdk-lib/aws-ec2'
 import { Runtime } from 'aws-cdk-lib/aws-lambda'
 import { NodejsFunction } from 'aws-cdk-lib/aws-lambda-nodejs'
@@ -28,7 +29,7 @@ const lambdaSecurityGroup = new SecurityGroup(
   { vpc: vpc }
 )
 
-const lambda = new NodejsFunction(vpcStack, 'myLambda', {
+const lambda = new NodejsFunction(vpcStack, 'vpcLambda', {
   entry: path.join(__dirname, 'functions', 'get-ip', 'handler.ts'),
   runtime: Runtime.NODEJS_20_X,
   timeout: Duration.seconds(30),
@@ -37,8 +38,17 @@ const lambda = new NodejsFunction(vpcStack, 'myLambda', {
   securityGroups: [lambdaSecurityGroup],
 })
 
+const api = new LambdaRestApi(vpcStack, 'restApiForVpcLambda', {
+  handler: lambda,
+})
+
 backend.addOutput({
   custom: {
-    'vpc-lambda-fn-name': lambda.functionName,
+    API: {
+      [api.restApiName]: {
+        endpoint: api.url,
+        region: vpcStack.region,
+      },
+    }
   }
 })

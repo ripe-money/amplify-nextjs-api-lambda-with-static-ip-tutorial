@@ -1,8 +1,8 @@
 # Tutorial: Amplify Next.js project with API Lambda that has a static IP address
-We have a Next.js app deployed using AWS Amplify. The app needs to call a payment API, but that API only accepts calls from a set of whitelisted IP addresses. This presents a challenge since Amplify is designed to use serverless Lambdas for backend code execution, and Lambdas are not guaranteed static IP addresses. This tutorial shows how to add a customized VPC with a NAT gateway to solve that challenge.
+We have a Next.js app deployed using AWS Amplify. The app needs to call a payment API, but that API only accepts calls from a set of whitelisted IP addresses. This presents a challenge since Amplify is designed to use serverless Lambdas for backend code execution, and Lambdas are not guaranteed static IP addresses. This tutorial shows how to add a customized VPC with a NAT gateway to solve that problem.
 
-## 1. Set up a barebone Amplify Next.js app
-First step is to set up a Next.js project for the frontend: `npx create-next-app@latest`.
+## 1. Set up a Amplify Next.js app
+Step 1 and 2 are just to set up a barebone app. First initialize a Next.js project for the frontend: `npx create-next-app@latest`.
 
 [Set up your local environment for Amplify development](https://docs.amplify.aws/nextjs/start/account-setup/) if you haven't done so before. We will install the Amplify libraries:
 ```sh
@@ -17,7 +17,7 @@ defineBackend({});
 
 At this point you should be able to locally start you backend (`npx ampx sandbox`) in one terminal while starting the frontend (`npm run dev`) in another.
 
-## 2. Create a barebone server action
+## 2. Create a server action
 In a typical Next.js app, business logic is executed in server actions. E.g., a server action may handle a payment request by updating databases and making third-party calls. For this tutorial, our server action will just make an API call to retrieve its own IP address. Create a file `app/actions.ts`:
 ```js
 'use server'
@@ -103,7 +103,7 @@ const backend = defineBackend({})
 
 const vpcStack = backend.createStack('vpc')
 
-const lambda = new NodejsFunction(vpcStack, 'myLambda', {
+const lambda = new NodejsFunction(vpcStack, 'vpcLambda', {
   entry: path.join(__dirname, 'functions', 'get-ip', 'handler.ts'),
   runtime: Runtime.NODEJS_20_X,
   timeout: Duration.seconds(30),
@@ -123,7 +123,7 @@ Information about Amplify's backend is normally summarized in the `amplify_outpu
 Once you've run `npx ampx sandbox` to deploy this new backend, open `amplify_outputs.json` to find the function name of the deployed Lambda. Look it up in your AWS [Lambda dashboard](console.aws.amazon.com/lambda/home). Navigate to the dashboard for that Lambda and do a test run to see that it can retrieve its own IP address. The result should be an IP address owned by AWS.
 
 ## 4. Set the Lambda in its own VPC
-Next we create a generic VPC with mostly default settings for the Lambda. Update `backend.ts`:
+So far our code has used names like "vpcStack" and "vpcLambda," those are just names for human reference. We haven't created a VPC yet. Let's make one now with mostly default settings and put our Lambda in it. Update `backend.ts`:
 ```js
 import { SecurityGroup, SubnetType, Vpc } from 'aws-cdk-lib/aws-ec2'
 
@@ -152,7 +152,7 @@ const lambdaSecurityGroup = new SecurityGroup(
   { vpc: vpc }
 )
 
-const lambda = new NodejsFunction(vpcStack, 'myLambda', {
+const lambda = new NodejsFunction(vpcStack, 'vpcLambda', {
   ...
   vpc: vpc,
   vpcSubnets: { subnetType: SubnetType.PRIVATE_WITH_EGRESS },
@@ -164,9 +164,9 @@ const lambda = new NodejsFunction(vpcStack, 'myLambda', {
 
 Go back to the Lambda dashboard and test the Lambda again, you'll see the Lambda's IP address has changed. Now go to the AWS VPC dashboard and select the ["Elastic IPs"](https://console.aws.amazon.com/vpcconsole/home?#Addresses:) tab. You'll see two EIP addresses there, one of which is the IP address you saw when running the Lambda.
 
-So here's what happened underneath. When we instantiated a VPC with `Vpc()`, we specified three subnet configurations (public, private, isolated) and left the number of availability zones (AZ) unspecified, which defaults to 2. That means we have a total of six subnets. E.g., there are two public subnets, one in each AZ. Similarly there are also two private subnets and two isolated subnets.
+So here's what happened underneath. When we instantiated a VPC with `Vpc()`, we specified three subnet configurations (`Public`, `Private`, `Isolated`) and left the number of availability zones (AZ) unspecified, which defaults to 2. That means we have a total of six subnets. E.g., there are two public subnets, one in each AZ. Similarly there are also two private subnets and two isolated subnets.
 
-The generated VPC also, by default, includes a NAT gateway with one Elastic IP (EIP) address automatically provisioned for each public subnet. Thus you see two EIP addresses on the dashboard. Resources within a VPC interacts with the internet through the NAT gateway, which is why you see one of those two EIPs in the Lambda execution result. We shouldn't care which availability zone a Lambda is running in, since by design the Lambda can run in either AZ to... improve availability.
+The generated VPC also, by default, includes a NAT gateway with one Elastic IP (EIP) address automatically provisioned for each public subnet. Thus you see two EIP addresses on the dashboard. Resources within a VPC interacts with the internet through the NAT gateway, which is why you see one of those two EIPs in the Lambda execution result. We shouldn't care which availability zone a Lambda is running in, since by design the Lambda can run in either AZ to improve availability.
 
 ## 5. Allocate persistent EIP addresses
 Instead of using the automatically provisioned EIPs, we want to use our own that are constant and persistent across various deployments (e.g. multiple dev setups and production). First let's *allocate* our EIP from the ["Elastic IPs"](https://console.aws.amazon.com/vpcconsole/home?#Addresses:) dashboard. We'll need two, one for each availability zone. Note their Allocation IDs. (Obviously, also note their assigned IP addresses.)
@@ -188,6 +188,78 @@ const vpc = new Vpc(vpcStack, 'LambdaVpc', {
 })
 ```
 
-Run the Lambda again. You'll see that it's calling from one of our allocated IP addresses! We will provide these allocated IP addresses to the third-party payment API to be whitelisted.
+Run the Lambda again. You'll see that it's calling from one of our allocated IP addresses! We will provide these allocated IP addresses to the third-party payment API for whitelisting.
 
 ## 5. Call Lambda from Next.js
+Now that we have a Lambda that makes outbound calls from a prescribed set of IP addresses, we need some way of calling that Lambda from within our app. There are a lot of options, such as having the Lambda respond to database events, or listen for messages from SNS. The appropriate choice will depend on your use case. For illustration we will wrap the Lambda inside [Amplify's API framework](https://docs.amplify.aws/nextjs/build-a-backend/add-aws-services/rest-api/set-up-rest-api/), so we can call it like a REST API. This will also allow us to easily re-use [Amplify's auth system](https://docs.amplify.aws/nextjs/build-a-backend/add-aws-services/rest-api/customize-authz/) for access control. For example, if you're using IAM or Cognito for authentication, it's [well documented](https://docs.amplify.aws/nextjs/build-a-backend/add-aws-services/rest-api/customize-authz/) how to add authorization to the API gateway.
+
+Wrapping a Lambda in a REST API is straightforward with the `LambdaRestApi` function. We will make this API publicly accessible and leave it to the reader to add restriction rules. Obviously, DO NOT DEPLOY A PUBLIC API TO PRODUCTION! Afterall, there's certainly a good reason why the API we're wrapping requires IP whitelisting.
+
+Having created an API access point for the Lambda, we'll expose it via `amplify_outputs.json` to our Next.js app. Whereas we previously had outputted the Lambda function name in that file, we now replace it with the new API endpoint. Update `backend.ts` with
+```js
+import { LambdaRestApi } from 'aws-cdk-lib/aws-apigateway'
+
+...
+const api = new LambdaRestApi(vpcStack, 'restApiForVpcLambda', {
+  handler: lambda,
+})
+
+backend.addOutput({
+  custom: {
+    // 'vpc-lambda-fn-name': lambda.functionName,
+    API: {
+      [api.restApiName]: {
+        endpoint: api.url,
+        region: vpcStack.region,
+      },
+    }
+  }
+})
+```
+
+When the new backend is compiled and deployed to the sandbox, you can look inside `amplify_outputs.json` to see what the URL endpoint is. Call it with your browser (or `curl`) and you'll see the Lambda output showing one of your allocated EIP addresses.
+
+Our Next.js app can pick up the URL endpoint directly from `amplify_outputs.json` and call it with standard Javascript `fetch()`. But since we'll likely be using other Amplify frontend libraries, we will use that framework now. Let's create the file `app/amplifyConfig.ts` to configure Amplify frontend with the following [initialization code](https://docs.amplify.aws/nextjs/build-a-backend/add-aws-services/rest-api/set-up-rest-api/#initialize-amplify-api).
+```js
+import { Amplify } from 'aws-amplify'
+import outputs from '@/amplify_outputs.json'
+
+Amplify.configure(outputs)
+const existingConfig = Amplify.getConfig()
+
+Amplify.configure({
+  ...existingConfig,
+  API: {
+    ...existingConfig.API,
+    REST: outputs.custom.API
+  }
+})
+```
+
+The Amplify configuration above needs to be called before any Amplify function is used. We'll update the entire `app/actions.ts` file to call our Lambda API:
+```js
+'use server'
+
+import { get } from 'aws-amplify/api';
+
+import './amplifyConfig'
+
+export async function getIP() {
+  try {
+    const restOperation = get({
+      apiName: 'restApiForVpcLambda',
+      path: ''
+    })
+    const response = await restOperation.response
+    const json = await response.body.json() as { ip: string }
+
+    return json
+  } catch (error) {
+    console.log('GET call failed: ', error)
+  }
+}
+```
+
+We're using Amplify's `get` function to [fetch data](https://docs.amplify.aws/nextjs/build-a-backend/add-aws-services/rest-api/fetch-data/) from our Lambda's REST API. Note that we're referring to the API by the name we've given to it (`restApiForVpcLambda`), rather than having to keep track of the URL. Amplify will figure it out based on its configuration.
+
+With all that set up and your frontend running locally, you should be able to go to http://localhost:3000/ in your browser and see that your app is able to access an external API (https://api.ipify.org) from a set of static IP addresses that you control.

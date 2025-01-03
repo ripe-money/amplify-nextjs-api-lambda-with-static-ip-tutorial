@@ -1,6 +1,20 @@
 'use server'
 
+import { get } from 'aws-amplify/api';
+
+import './amplifyConfig'
+
 export async function getIP() {
-  return fetch('https://api.ipify.org?format=json')
-    .then(res => res.json())
+  try {
+    const restOperation = get({
+      apiName: 'restApiForVpcLambda',
+      path: ''
+    })
+    const response = await restOperation.response
+    const json = await response.body.json() as { ip: string }
+
+    return json
+  } catch (error) {
+    console.log('GET call failed: ', error)
+  }
 }
